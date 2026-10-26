@@ -7,59 +7,99 @@ export const login = async (req, res) => {
   try {
     const { token } = req.body;
     if (!token) {
-      return res.json("Token missing");
+      return res.status(400).json({
+        success: false,
+        message: "Authentication token is required",
+      });
     }
 
     let decodedToken;
     try {
       decodedToken = await getAuth(firebaseApp).verifyIdToken(token);
-      //   console.log(decodedToken);
-    } catch (error) {
-      console.log(error);
+    } catch (verifyError) {
+      console.error("Firebase token verification error:", verifyError.message);
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired authentication token",
+        error: verifyError.message,
+      });
     }
 
-    let user = await User.findOne({ firebaseId: decodedToken?.uid });
-    if (!user) {
-      user = await User.create({
-        name: decodedToken?.name,
-        email: decodedToken?.email,
-        avatar: decodedToken?.picture,
-        firebaseId: decodedToken?.uid,
+    if (!decodedToken?.uid) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication failed: Invalid token payload",
+      });
+    }
+
+    let user;
+    try {
+      user = await User.findOne({ firebaseId: decodedToken.uid });
+      if (!user) {
+        user = await User.create({
+          name: decodedToken.name || "User",
+          email: decodedToken.email || "",
+          avatar: decodedToken.picture || "",
+          firebaseId: decodedToken.uid,
+        });
+      }
+    } catch (dbError) {
+      console.error("Database user error:", dbError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Database error while processing user profile",
+        error: dbError.message,
       });
     }
 
     const sessionId = crypto.randomUUID();
-    await redis.set(`session-${sessionId}`, sessionId);
-    await redis.set(
-      `sessionId-${sessionId}`,
-      JSON.stringify({
-        userId: user._id,
-        name: user?.name,
-        email: user?.email,
-        avatar: user?.avatar,
-      }),
-      "EX",
-      7 * 24 * 60 * 60 * 1000,
-    );
+    const sessionTTLInSeconds = 7 * 24 * 60 * 60; // 7 days in seconds
+
+    try {
+      await redis.set(`session-${sessionId}`, sessionId, "EX", sessionTTLInSeconds);
+      await redis.set(
+        `sessionId-${sessionId}`,
+        JSON.stringify({
+          userId: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+        }),
+        "EX",
+        sessionTTLInSeconds,
+      );
+    } catch (redisError) {
+      console.error("Redis session storage error:", redisError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to create user session in storage",
+        error: redisError.message,
+      });
+    }
 
     res.cookie("sessionId", sessionId, {
       httpOnly: true,
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      secure: false,
+      sameSite: "lax",
+      maxAge: sessionTTLInSeconds * 1000,
+      secure: process.env.NODE_ENV === "production",
     });
 
     return res.status(200).json({
       success: true,
-      message: "User Logged in successfully",
+      message: "User logged in successfully",
       user: {
-        userId: user?._id,
-        name: user?.name,
-        email: user?.email,
-        avatar: user?.avatar,
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
       },
     });
   } catch (error) {
-    console.log(error);
+    console.error("Login controller unexpected error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error during login",
+      error: error.message,
+    });
   }
 };
