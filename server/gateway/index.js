@@ -5,6 +5,7 @@ import cors from "cors";
 import authMiddleware from "./middleware/authMiddleware.js";
 import { getMe } from "./controller/user.controller.js";
 import cookieParser from "cookie-parser";
+import { proxyHeader } from "./utils/proxyHeaders.js";
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api/auth", proxy(process.env.AUTH_URL));
+app.use("/api/document", authMiddleware, proxyHeader(process.env.DOCUMENT_URL));
 app.get("/api/getMe", authMiddleware, getMe);
 
 // 404 Not Found handler
