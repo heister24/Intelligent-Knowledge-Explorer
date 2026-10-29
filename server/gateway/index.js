@@ -37,6 +37,11 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", proxy(process.env.AUTH_URL));
 app.use("/api/document", authMiddleware, proxyHeader(process.env.DOCUMENT_URL));
+app.use(
+  "/api/conversation",
+  authMiddleware,
+  proxyHeader(process.env.CONVERSATION_URL),
+);
 app.get("/api/getMe", authMiddleware, getMe);
 
 // 404 Not Found handler

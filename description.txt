@@ -1,0 +1,58 @@
+i m going to build this&#x20;
+
+## 1. 🧠 Intelligent Knowledge Explorer — My Top Recommendation
+
+**Difficulty:** Intermediate\
+**Estimated time:** 2–3 weeks for an MVP\
+**Tech stack:** MERN + GraphRAG + LangChain
+
+### 💡 What is this project?
+
+Imagine uploading 100 documents about different technologies, companies, people, and products.
+
+Your application automatically identifies entities and their relationships and creates a knowledge graph.
+
+You can then ask questions in natural language.
+
+**Example documents:**
+
+- Document A: OpenAI develops AI models.
+- Document B: GPT models can be used with LangChain.
+- Document C: LangChain supports retrieval-augmented generation.
+- Document D: GraphRAG uses relationships between entities to improve retrieval.
+
+**You ask:**\
+"How is OpenAI connected to GraphRAG?"
+
+The system can trace the relationships:
+
+OpenAI → develops → GPT models → used with → LangChain → supports → RAG applications → can incorporate → GraphRAG.
+
+The exact relationships would depend on your source documents.
+
+### Features
+
+- Google authentication using Firebase.
+- Upload PDF and TXT documents.
+- Automatically extract entities and relationships.
+- Visualize the knowledge graph.
+- Ask questions through a chat interface.
+- Show which documents support each answer.
+- Save chat history using MongoDB.
+- Use Redis for session management and caching.
+
+### What will the interface look like?
+
+Imagine a dashboard with three sections:
+
+| Section      | What it displays                             |
+| ------------ | -------------------------------------------- |
+| Left sidebar | Uploaded documents and chat history          |
+| Main panel   | Chat interface for asking questions          |
+| Right panel  | Interactive graph showing connected entities |
+
+For example, clicking on **LangChain** highlights the related entities and connections.
+
+**Why I recommend it:** It is a practical way to understand GraphRAG while building a portfolio project using technologies you already know.
+
+So srtart from scratch everything now and we will do it step by step means both frontend and backend integration together after every feature written

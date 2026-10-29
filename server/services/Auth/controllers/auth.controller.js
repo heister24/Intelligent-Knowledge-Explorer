@@ -56,7 +56,12 @@ export const login = async (req, res) => {
     const sessionTTLInSeconds = 7 * 24 * 60 * 60; // 7 days in seconds
 
     try {
-      await redis.set(`session-${sessionId}`, sessionId, "EX", sessionTTLInSeconds);
+      await redis.set(
+        `session-${sessionId}`,
+        sessionId,
+        "EX",
+        sessionTTLInSeconds,
+      );
       await redis.set(
         `sessionId-${sessionId}`,
         JSON.stringify({
@@ -99,6 +104,34 @@ export const login = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal server error during login",
+      error: error.message,
+    });
+  }
+};
+
+export const logout = async (req, res) => {
+  try {
+    const sessionId = req.cookies?.sessionId;
+    console.log(sessionId);
+
+    if (sessionId) {
+      await redis.del(`session-${sessionId}`, `sessionId-${sessionId}`);
+    }
+
+    res.clearCookie("sessionId", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+    return res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    console.error("Logout error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error during logout",
       error: error.message,
     });
   }
