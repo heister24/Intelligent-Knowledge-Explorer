@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import fetchAllDocuments from "../features/fetchAllDocuments";
 import uploadDocument from "../features/uploadDocument";
 import deleteDocument from "../features/deleteDocument";
+import downloadDocument from "../features/downloadDocument";
 
 const DocumentManager = ({ selectedDocIds = [], setSelectedDocIds = () => {} }) => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
   const fileInputRef = useRef(null);
 
   const loadDocuments = async () => {
@@ -47,7 +49,7 @@ const DocumentManager = ({ selectedDocIds = [], setSelectedDocIds = () => {} }) 
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this document?")) return;
+    if (!window.confirm("Delete this document from cloud storage and database?")) return;
 
     try {
       const data = await deleteDocument(id);
@@ -57,6 +59,25 @@ const DocumentManager = ({ selectedDocIds = [], setSelectedDocIds = () => {} }) 
       }
     } catch (err) {
       console.error("Failed to delete document:", err);
+    }
+  };
+
+  const handleDownload = async (doc, e) => {
+    e.stopPropagation();
+    try {
+      setDownloadingId(doc._id);
+      await downloadDocument(doc._id, doc.originalname);
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to download document");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleOpenCloud = (url, e) => {
+    e.stopPropagation();
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -118,7 +139,7 @@ const DocumentManager = ({ selectedDocIds = [], setSelectedDocIds = () => {} }) 
       </div>
 
       {/* Document list scroll area */}
-      <div className="h-44 overflow-y-auto p-2 space-y-1">
+      <div className="h-48 overflow-y-auto p-2 space-y-1">
         {loading ? (
           <div className="text-center py-4 text-neutral-600">[ LOADING_DOCUMENTS... ]</div>
         ) : documents.length === 0 ? (
@@ -126,6 +147,9 @@ const DocumentManager = ({ selectedDocIds = [], setSelectedDocIds = () => {} }) 
         ) : (
           documents.map((doc) => {
             const isSelected = selectedDocIds.includes(doc._id);
+            const isPdf = doc.originalname?.toLowerCase().endsWith(".pdf");
+            const isDownloading = downloadingId === doc._id;
+
             return (
               <div
                 key={doc._id}
@@ -136,28 +160,54 @@ const DocumentManager = ({ selectedDocIds = [], setSelectedDocIds = () => {} }) 
                     : "border-neutral-900 hover:border-neutral-800 bg-neutral-900/30 text-neutral-400"
                 }`}
               >
-                <div className="flex items-center gap-2 truncate pr-2">
+                {/* Checkbox and Document Label */}
+                <div className="flex items-center gap-2 truncate pr-2 flex-1 min-w-0">
                   <input
                     type="checkbox"
                     checked={isSelected}
-                    onChange={() => {}} // handled by row onClick
-                    className="accent-emerald-500 cursor-pointer"
+                    onChange={() => {}} // row onClick handles toggle
+                    className="accent-emerald-500 cursor-pointer shrink-0"
                   />
-                  <span className="text-[10px] text-neutral-500">
-                    {doc.originalname?.endsWith(".pdf") ? "PDF" : "TXT"}
+                  <span className="text-[10px] text-neutral-500 shrink-0 font-semibold">
+                    {isPdf ? "PDF" : "TXT"}
                   </span>
                   <span className="truncate text-xs" title={doc.originalname}>
                     {doc.originalname}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => handleDelete(doc._id, e)}
-                  className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-red-400 text-[10px] px-1 cursor-pointer transition-opacity"
-                  title="Delete document"
-                >
-                  ✕
-                </button>
+
+                {/* Document Actions (View Cloud URL, Download, Delete) */}
+                <div className="flex items-center gap-1 shrink-0 ml-1">
+                  {doc.fileUrl && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenCloud(doc.fileUrl, e)}
+                      title="View file in Cloudinary"
+                      className="text-neutral-500 hover:text-emerald-400 text-[10px] px-1 transition-colors cursor-pointer"
+                    >
+                      [VIEW]
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleDownload(doc, e)}
+                    disabled={isDownloading}
+                    title="Download file"
+                    className="text-neutral-500 hover:text-neutral-200 text-[10px] px-1 transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    {isDownloading ? "..." : "[DL]"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => handleDelete(doc._id, e)}
+                    className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-red-400 text-[10px] px-1 cursor-pointer transition-opacity"
+                    title="Delete document"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             );
           })

@@ -1,11 +1,11 @@
 import Document from "../models/document.model.js";
 import fs from "fs";
 import path from "path";
+import { uploadToCloudinary, deleteFromCloudinary } from "../utils/cloudinaryUpload.js";
 
 export const uploadDocument = async (req, res) => {
   try {
     const userId = req?.headers["x-user-id"];
-    // console.log(userId);
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -20,24 +20,42 @@ export const uploadDocument = async (req, res) => {
       });
     }
 
-    const { originalname, mimetype, size, filename } = req.file;
+    // Verify Cloudinary environment variables
+    if (
+      !process.env.CLOUDINARY_CLOUD_NAME ||
+      !process.env.CLOUDINARY_API_KEY ||
+      !process.env.CLOUDINARY_API_SECRET
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Cloudinary credentials missing. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET in server/services/Document/.env",
+      });
+    }
+
+    const { originalname, mimetype, size, buffer } = req.file;
+
+    // Stream buffer directly to Cloudinary
+    const cloudResult = await uploadToCloudinary(buffer, originalname);
 
     const newDocument = await Document.create({
       userId,
       originalname,
-      filename,
+      filename: cloudResult.public_id,
       mimetype,
       size,
+      fileUrl: cloudResult.secure_url,
+      cloudinaryPublicId: cloudResult.public_id,
       status: "uploaded",
     });
 
     return res.status(201).json({
       success: true,
-      message: "Document uploaded successfully",
+      message: "Document uploaded to Cloudinary successfully",
       document: newDocument,
     });
   } catch (error) {
-    console.error(`Error in uploading document: ${error.message}`);
+    console.error(`Error in uploading document to cloud: ${error.message}`);
     return res.status(500).json({
       success: false,
       message: "Internal Server Error at Upload Document",
@@ -49,7 +67,6 @@ export const uploadDocument = async (req, res) => {
 export const getAllDocuments = async (req, res) => {
   try {
     const userId = req.headers["x-user-id"];
-    // console.log(userId)
 
     if (!userId) {
       return res.status(401).json({
@@ -58,16 +75,7 @@ export const getAllDocuments = async (req, res) => {
       });
     }
 
-    const documents = await Document.find({ userId: userId });
-    // console.log(documents);
-
-    if (documents.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: "No documents found",
-        documents: [],
-      });
-    }
+    const documents = await Document.find({ userId: userId }).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
@@ -75,9 +83,7 @@ export const getAllDocuments = async (req, res) => {
       documents: documents,
     });
   } catch (error) {
-    console.log(
-      `Error while fetching all document of specific user : ${error.message}`,
-    );
+    console.error(`Error while fetching documents: ${error.message}`);
     return res.status(500).json({
       success: false,
       message: "Internal Server Error at Fetching Document",
@@ -90,7 +96,7 @@ export const getDocumentById = async (req, res) => {
   try {
     const userId = req.headers["x-user-id"];
     const documentId = req.params.id;
-    // console.log(documentId);
+
     if (!documentId) {
       return res.status(400).json({
         success: false,
@@ -102,7 +108,6 @@ export const getDocumentById = async (req, res) => {
       _id: documentId,
       userId: userId,
     });
-    // console.log(document);
 
     if (!document) {
       return res.status(404).json({
@@ -117,7 +122,7 @@ export const getDocumentById = async (req, res) => {
       document: document,
     });
   } catch (error) {
-    console.log(`Error while fetching document by ID : ${error.message}`);
+    console.error(`Error while fetching document by ID: ${error.message}`);
     return res.status(500).json({
       success: false,
       message: "Internal Server Error at Fetching Document by ID",
@@ -130,7 +135,7 @@ export const deleteDocumentById = async (req, res) => {
   try {
     const userId = req.headers["x-user-id"];
     const documentId = req.params.id;
-    // console.log(documentId);
+
     if (!documentId) {
       return res.status(400).json({
         success: false,
@@ -150,9 +155,25 @@ export const deleteDocumentById = async (req, res) => {
       });
     }
 
-    const filePath = path.resolve("./uploads", document.filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // 1. Delete from Cloudinary if stored in cloud
+    if (document.cloudinaryPublicId) {
+      try {
+        await deleteFromCloudinary(document.cloudinaryPublicId);
+      } catch (cloudErr) {
+        console.error(`Failed to delete from Cloudinary: ${cloudErr.message}`);
+      }
+    }
+
+    // 2. Fallback: Clean up legacy local file on disk if it exists
+    if (document.filename) {
+      const filePath = path.resolve("./uploads", document.filename);
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (fsErr) {
+          console.error(`Failed to unlink local file: ${fsErr.message}`);
+        }
+      }
     }
 
     return res.status(200).json({
@@ -160,7 +181,7 @@ export const deleteDocumentById = async (req, res) => {
       message: "Document Deleted Successfully",
     });
   } catch (error) {
-    console.log(`Error while deleting document : ${error.message}`);
+    console.error(`Error while deleting document: ${error.message}`);
     return res.status(500).json({
       success: false,
       message: "Internal Server Error at Deleting Document",
@@ -186,18 +207,47 @@ export const downloadDocumentById = async (req, res) => {
       userId: userId,
     });
 
-    const filePath = path.resolve("./uploads", document.filename);
-    // If file does NOT exist on disk, return 404
-    if (!fs.existsSync(filePath)) {
+    if (!document) {
       return res.status(404).json({
         success: false,
-        message: "File not found on server disk",
+        message: "Document not found",
       });
     }
 
-    return res.download(filePath, document.originalname);
+    // 1. If stored in Cloudinary, stream file bytes to client
+    if (document.fileUrl) {
+      const cloudRes = await fetch(document.fileUrl);
+      if (!cloudRes.ok) {
+        return res.status(cloudRes.status).json({
+          success: false,
+          message: "Failed to retrieve document from Cloudinary",
+        });
+      }
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${encodeURIComponent(document.originalname)}"`,
+      );
+      res.setHeader("Content-Type", document.mimetype || "application/octet-stream");
+
+      const arrayBuffer = await cloudRes.arrayBuffer();
+      return res.send(Buffer.from(arrayBuffer));
+    }
+
+    // 2. Fallback: If legacy local file on disk
+    if (document.filename) {
+      const filePath = path.resolve("./uploads", document.filename);
+      if (fs.existsSync(filePath)) {
+        return res.download(filePath, document.originalname);
+      }
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: "Document file not found in cloud storage or on server disk",
+    });
   } catch (error) {
-    console.log(`Error while downloading document : ${error.message}`);
+    console.error(`Error while downloading document: ${error.message}`);
     return res.status(500).json({
       success: false,
       message: "Internal Server Error at Downloading Document",

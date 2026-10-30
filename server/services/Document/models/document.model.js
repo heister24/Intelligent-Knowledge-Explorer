@@ -9,11 +9,10 @@ const documentSchema = new mongoose.Schema(
     },
     originalname: {
       type: String,
-      required : true,
+      required: true,
     },
     filename: {
       type: String,
-      required : true,
     },
     mimetype: {
       type: String,
@@ -22,6 +21,12 @@ const documentSchema = new mongoose.Schema(
     size: {
       type: Number,
       required: true,
+    },
+    fileUrl: {
+      type: String,
+    },
+    cloudinaryPublicId: {
+      type: String,
     },
     status: {
       type: String,
